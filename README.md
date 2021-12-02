@@ -3,6 +3,13 @@ This crate is a wrapper around the nft storage REST API with some additions, it 
 
 Examples are present in the `examples` directory, to make them work you must create an [nft storage](https://nft.storage/) account and generate an API Key
 
+#### Add crate to your project
+
+```toml
+[dependencies]
+nft-storage = { git = "https://github.com/sergiupopescu199/nft-storage.rs.git", branch = "main" }
+```
+
 ### Create an NFT
 
 When storing an nft first of all it upload the desired file to nft storage, store in memory the file’s cid and then create another file `metadata.json`  there the file cid previously created is saved and also the nft name and it’s description
