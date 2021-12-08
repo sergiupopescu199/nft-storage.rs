@@ -1,7 +1,10 @@
 mod error;
 use anyhow::{anyhow, Result};
 pub use error::NFTStorageError;
-use reqwest::Client;
+use reqwest::{
+    multipart::{Form, Part},
+    Client,
+};
 use serde_json::{json, Value};
 
 /// NftStorage struct
@@ -18,7 +21,7 @@ pub struct NftStorage {
 impl NftStorage {
     /// Create a new instance of NftStorage
     ///
-    /// The `url` is the url of the api which nftt storage is using for more information see `https://nft.storage/api-docs/`.
+    /// The `url` is the url of the api which nftt storage is using for more information see https://nft.storage/api-docs/.
     ///
     /// The `token` is the jwt token generated from nft storage dashboard.
     /// ```
@@ -34,16 +37,19 @@ impl NftStorage {
     /// }
     /// ```
     ///
-    pub fn new(url: &str, token: &str) -> NftStorage {
+    pub fn new<S>(url: S, token: S) -> NftStorage
+    where
+        S: Into<String>,
+    {
         NftStorage {
             client: Client::new(),
-            url: url.to_string(),
-            token: token.to_string(),
+            url: url.into(),
+            token: token.into(),
         }
     }
 
     /// List all nfts from nft storage
-    /// `before` is used to return results created before provided timestamp `2021-12-01T08:52:33.461+00:00` or like this `2020-07-27T17:32:28Z` which is  and `limit` are the max records to return.
+    /// `before` is used to return results created before provided timestamp `2021-12-01T08:52:33` or like this `2020-07-27T17:32:28Z` which is  and `limit` are the max records to return.
     ///
     /// the `only_metadata` option is used to return only the nft which contains the metadata.json file
     /// ```
@@ -56,7 +62,7 @@ impl NftStorage {
     /// 	// provide the url and as second argument the token generated from nft storage dashboard
     /// 	let nft_storage = NftStorage::new("https://api.nft.storage", "token generated from nft storage");
     /// 	// list nfts only with metadata
-    /// 	let list_nfts: Value  = nft_storage.list_all_stored_nft(None, None).await?;
+    /// 	let list_nfts: Value  = nft_storage.list_all_stored_nft(None, None, true).await?;
     ///
     /// 	Ok(())
     /// }
@@ -66,6 +72,7 @@ impl NftStorage {
         &self,
         before: Option<&str>,
         limit: Option<&str>,
+        only_metadata: bool,
     ) -> Result<Value, NFTStorageError> {
         // get the optional value or use an empty string
         let before = if let Some(value) = before {
@@ -90,32 +97,59 @@ impl NftStorage {
         if !status {
             return Err(NFTStorageError::ApiError(body));
         }
+        // if treu get only metadata.json files and skip others
+        if only_metadata {
+            let final_filtered_list = body["value"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                // we always know that there is only one file in the files array if we store a metadata nft
+                .filter(|f| f["files"][0]["name"] == "metadata.json")
+                // add additional convenience links
+                .map(|f| {
+                    let link_1 = format!("https://{}.ipfs.dweb.link", f["cid"].as_str().unwrap());
+                    let link_2 = format!("https://ipfs.io/ipfs/{}", f["cid"].as_str().unwrap());
+                    let link_3 = format!("ipfs://{}", f["cid"].as_str().unwrap());
 
-        let final_filtered_list = body["value"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            // add additional convenience links to the filtered
-            .map(|f| {
-                let link_1 = format!("https://{}.ipfs.dweb.link", f["cid"].as_str().unwrap());
-                let link_2 = format!("https://ipfs.io/ipfs/{}", f["cid"].as_str().unwrap());
-                let link_3 = format!("ipfs://{}", f["cid"].as_str().unwrap());
+                    f["link"] = vec![link_1, link_2, link_3].into();
 
-                f["link"] = vec![link_1, link_2, link_3].into();
+                    f
+                })
+                .collect::<Vec<_>>();
+            // modify the body with modified data, does include only metadata.json
+            body["value"] = serde_json::to_value(final_filtered_list)?;
+        } else {
+            let final_filtered_list = body["value"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                // add additional convenience links to the filtered
+                .map(|f| {
+                    let link_1 = format!("https://{}.ipfs.dweb.link", f["cid"].as_str().unwrap());
+                    let link_2 = format!("https://ipfs.io/ipfs/{}", f["cid"].as_str().unwrap());
+                    let link_3 = format!("ipfs://{}", f["cid"].as_str().unwrap());
 
-                f
-            })
-            .collect::<Vec<_>>();
-        // modify the body with modified data, does include metadata.json and also all files
-        body["value"] = serde_json::to_value(final_filtered_list)?;
+                    f["link"] = vec![link_1, link_2, link_3].into();
 
+                    f
+                })
+                .collect::<Vec<_>>();
+            // modify the body with modified data, does include metadata.json and also all files
+            body["value"] = serde_json::to_value(final_filtered_list)?;
+        }
         Ok(body)
     }
 
     /// Store an NFT on nft storage
-    /// `file` is the file bytes recieved from a form-data and `file_name` is the filename of the file we want to create an nft
+    ///
+    /// `file` is the file bytes recieved from a form-data
+    ///
+    /// `file_name` is the filename of the file we want to create an nft
     ///
     /// `nft_name` is the nft name and `description` is the description of the nft
+    ///
+    /// the main difference from `upload_file` method is that after uploading the file it creates a `metadata.json` file which
+    /// contains the uploaded file cid and also the nft name and it's description
     ///
     /// ```
     /// use nft_storage::NftStorage;
@@ -135,12 +169,15 @@ impl NftStorage {
     /// }
     /// ```
     ///
-    pub async fn store_nft(
+    pub async fn store_nft<S>(
         &self,
         file: Vec<u8>,
-        nft_name: &str,
-        description: &str,
-    ) -> Result<Value, NFTStorageError> {
+        nft_name: S,
+        description: S,
+    ) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
         // upload the file to nft storage, which is the actual file we want to create an nft
         let response = self.upload_file(file).await?;
         // get dir cid
@@ -149,8 +186,8 @@ impl NftStorage {
             .ok_or(anyhow!("Unable to parse json to get the string"))?;
         // create athe metadata form which will contain all files cid
         let metadata = json!({
-            "name": nft_name,
-            "description": description,
+            "name": nft_name.as_ref(),
+            "description": description.as_ref(),
             "files": cid
         });
         // create the form-data instance for metadata.json
@@ -162,6 +199,7 @@ impl NftStorage {
     }
 
     /// Delete an NFT
+    ///
     /// `cid` is the ipfs hash, every file/nft has it's unique cid
     ///
     /// ```
@@ -173,16 +211,19 @@ impl NftStorage {
     /// async fn main() -> Result<()> {
     /// 	// provide the url and as second argument the token generated from nft storage dashboard
     /// 	let nft_storage = NftStorage::new("https://api.nft.storage", "token generated from nft storage");
-    /// 	// delete nft
+    /// 	// delete nft by cid
     /// 	let delete_nft: Value  = nft_storage.delete_nft("bafybeihflij24dndd6qo3aacbbysuzuygis7yurvrzxp3uk7bk5kfvfsdt").await?;
     ///
     /// 	Ok(())
     /// }
     /// ```
     ///
-    pub async fn delete_nft(&self, cid: &str) -> Result<Value, NFTStorageError> {
+    pub async fn delete_nft<S>(&self, cid: S) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
         // create the url
-        let url = format!("{}/{}", self.url, cid);
+        let url = format!("{}/{}", self.url, cid.as_ref());
         // make the request to the nft storage api
         let response = self
             .client
@@ -201,7 +242,11 @@ impl NftStorage {
 
     /// Delete all NFT
     ///
+    /// ⚠ WARNING! ⚠
+    ///
     /// It will fetch and delete all nfts
+    ///
+    /// This method is meant for developing purposes, it can be quite dangerous in production.
     /// ```
     /// use nft_storage::NftStorage;
     /// use anyhow::Result;
@@ -221,17 +266,21 @@ impl NftStorage {
     pub async fn delete_all_nft(&self) -> Result<Value, NFTStorageError> {
         // create a loop to iterate and reqwest all nfts
         loop {
-            // get first 10 nfts
-            let nfts = self.list_all_stored_nft(None, None).await?;
+            // get first 100 nfts
+            let nfts: Value = self.list_all_stored_nft(None, Some("100"), false).await?;
             // check if ok is true this means the request was successfull and also check if the array is empty
             // if all is true break the loop this mean no nft are stored
-            if nfts["ok"].as_bool().unwrap() == true && nfts["value"].as_array().unwrap().len() <= 0
+            if nfts["ok"]
+                .as_bool()
+                .ok_or(anyhow!("Unable to fetch nfts"))?
+                == true
+                && nfts["value"].as_array().unwrap().len() <= 0
             {
                 break;
             }
             for e in nfts["value"]
                 .as_array()
-                .ok_or(anyhow!("Unable to parse json to get the vector "))?
+                .ok_or(anyhow!("Unable to parse json to get the values vector"))?
             {
                 println!("deleting CID: {}", e["cid"]);
                 self.delete_nft(
@@ -246,7 +295,7 @@ impl NftStorage {
 
         Ok(json!({
             "ok": true,
-            "value": "all nfts are deleted"
+            "value": "all nfts were deleted!"
         }))
     }
 
@@ -269,8 +318,11 @@ impl NftStorage {
     /// }
     /// ```
     ///
-    pub async fn get_nft(&self, cid: &str) -> Result<Value, NFTStorageError> {
-        let url = format!("{}/{}", self.url, cid);
+    pub async fn get_nft<S>(&self, cid: S) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
+        let url = format!("{}/{}", self.url, cid.as_ref());
         let response = self.client.get(url).bearer_auth(&self.token).send().await?;
         // check if the status of the request is in range of 200-299
         let status = response.status().is_success();
@@ -352,8 +404,11 @@ impl NftStorage {
     /// 	Ok(())
     /// }
     /// ```
-    pub async fn check_nft(&self, cid: &str) -> Result<Value, NFTStorageError> {
-        let url = format!("{}/check/{}", self.url, cid);
+    pub async fn check_nft<S>(&self, cid: S) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
+        let url = format!("{}/check/{}", self.url, cid.as_ref());
         let response = self.client.get(url).bearer_auth(&self.token).send().await?;
         // check if the status of the request is in range of 200-299
         let status = response.status().is_success();
@@ -362,5 +417,149 @@ impl NftStorage {
             true => Ok(body),
             false => Err(NFTStorageError::ApiError(body)),
         }
+    }
+
+    /// Upload multiple files to Nft Storage
+    ///
+    /// It will upload multiple files using multipart form data and files will be stored in IPFS Directory
+    ///
+    /// The max sise is around 30GB per file
+    ///
+    /// The main difference between `upload_file` method is that it upload a file NOT in a direcotry so its url is unique, if using
+    /// `upload_file_in_directory` it will store one or multiple files in an ipfs direcotry preserving the original filenames and all file will be
+    /// fetched by the direcotry cid  for example `bafybeihflij24dndd6qo3aacbbysuzuygis7yurvrzxp3uk7bk5kfvfsfg/my_file.txt`
+    ///
+    /// Every time using this method it will create a new directory
+    /// ```
+    /// use nft_storage::NftStorage;
+    /// use anyhow::Result;
+    /// use serde_json::Value;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<()> {
+    /// 	// provide the url and as second argument the token generated from nft storage dashboard
+    /// 	let nft_storage = NftStorage::new("https://api.nft.storage", "token generated from nft storage");
+    /// 	// read a file in order to have a Vec<u8> the same from a form-data
+    /// 	let file = std::fs::read("my_nft.jpg")?;
+    /// 	let fil2 = std::fs::read("my_nft2.jpg")?;
+    /// 	// create a vec of files bytes
+    /// 	let v = vec![file, file2];
+    /// 	// create a vec of file names
+    /// 	let f = vec!["my_nft.jpg".to_String()., "my_nft2.jpg".to_string()];
+    /// 	// delete nft
+    /// 	let upload_file: Value  = nft_storage.upload_file_in_directory(v, f).await?;
+    ///
+    /// 	Ok(())
+    /// }
+    /// ```
+    pub async fn upload_file_in_directory<S>(
+        &self,
+        files: Vec<Vec<u8>>,
+        file_names: Vec<S>,
+    ) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
+        let url = format!("{}/upload", self.url);
+        let mut form = Form::new();
+        // creating a custom part of teh form
+        for (index, _) in files.iter().enumerate() {
+            let part =
+                Part::bytes(files[index].clone()).file_name(file_names[index].as_ref().to_string());
+            form = Form::from(form.part("file", part));
+        }
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.token)
+            .multipart(form)
+            .send()
+            .await?;
+        let status = response.status().is_success();
+        // check if the status of the request is in range of 200-299
+        let body = response.json::<Value>().await?;
+        match status {
+            true => Ok(body),
+            false => Err(NFTStorageError::ApiError(body)),
+        }
+    }
+
+    /// Store an NFT on nft storage in a directory
+    ///
+    /// `file` is the array containing the the file bytes vecs recieved from a form-data
+    ///
+    /// `file_name` is the filename of the file we want to create an nft
+    ///
+    /// `nft_name` is the nft name and `description` is the description of the nft
+    ///
+    /// The difference from `upload_file_in_directory` method is that after uploading all files it creates a `metadata.json` file
+    /// that lists all files uploaded and also assigns the nft name and it's description, this metadata.json file it is stored on a IPFS Direcotry
+    ///
+    /// ```
+    /// use nft_storage::NftStorage;
+    /// use anyhow::Result;
+    /// use serde_json::Value;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<()> {
+    /// 	// provide the url and as second argument the token generated from nft storage dashboard
+    /// 	let nft_storage = NftStorage::new("https://api.nft.storage", "token generated from nft storage");
+    /// 	// read a file in order to have a Vec<u8> the same from a form-data
+    /// 	let file = std::fs::read("my_nft.jpg")?;
+    /// 	let fil2 = std::fs::read("my_nft2.jpg")?;
+    /// 	// create a vec of file bytes
+    /// 	let v = vec![file, file2];
+    /// 	// store an nft
+    /// 	let store_nft: Value  = nft_storage.store_nft_in_directory(v, "My NFT name", "My NFT description").await?;
+    ///
+    /// 	Ok(())
+    /// }
+    /// ```
+    ///
+    pub async fn store_nft_in_directory<S>(
+        &self,
+        files: Vec<Vec<u8>>,
+        file_names: Vec<S>,
+        nft_name: S,
+        description: S,
+    ) -> Result<Value, NFTStorageError>
+    where
+        S: AsRef<str>,
+    {
+        // upload the file to nft storage, which is the actual file we want to create an nft
+        let mut response = self.upload_file_in_directory(files, file_names).await?;
+        // get value array
+        let value = response["value"]["files"]
+            .as_array_mut()
+            .ok_or(anyhow!("Unable to get array value from json"))?
+            .clone();
+        // get cid of the folder that contains uploaded files
+        let cid = response["value"]["cid"]
+            .as_str()
+            .ok_or(anyhow!("Unable to get cid of files"))?;
+        // get all filenames uploaded
+        let mut file_names = value
+            .iter()
+            .map(|f| f["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        // concatenate to create the ipfs link to paste in metadata.json
+        let file_cids = file_names
+            .iter_mut()
+            .map(|f| format!("ipfs://{}/{}", cid, f))
+            .collect::<Vec<_>>();
+        // create athe metadata form which will contain all files cid
+        let metadata = json!({
+            "name": nft_name.as_ref(),
+            "description": description.as_ref(),
+            "files": file_cids
+        });
+        // create the form-data instance for metadata.json
+        let metadata_json_bytes = serde_json::to_vec(&metadata)?;
+        // create the metadata.json which will contain the nft cids
+        let response = self
+            .upload_file_in_directory(vec![metadata_json_bytes], vec!["metadata.json".to_string()])
+            .await?;
+
+        Ok(response)
     }
 }

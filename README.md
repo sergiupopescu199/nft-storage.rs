@@ -15,6 +15,8 @@ nft-storage = { git = "https://github.com/sergiupopescu199/nft-storage.rs.git", 
 When storing an nft first of all it upload the desired file to nft storage, store in memory the file’s cid and then create another file `metadata.json`  there the file cid previously created is saved and also the nft name and it’s description
 Is not ERC-1155 compatible NFT in some way but is a very flexible alternative, you can upload every type of file not just videos and images
 
+check out `store_nft_in_directory` method if you wan to upload one or more files to create an nft, as always a `metadata.json` file containing all files will be created 
+
 ```rust
 use anyhow::Result;
 use nft_storage::NftStorage;
@@ -46,7 +48,7 @@ List all stored nfts
 `before` is the timestamp it uses this format `2020-07-27T17:32:28Z` or is possible to get the timestamp directly from the response in `value.created`. 
 `limit` is the amount of files to show in a single request
 
-both  `before` and `limit` are optional but `only_metadata` is required
+both  `before` and `limit` are optional but `only_metadata` is required which filters all files that has `metadata.json` as name
 
 ```json
 {
@@ -87,8 +89,8 @@ async fn main() -> Result<()> {
     );
     // store an nft
     let list_nft: Value = nft_storage
-        .list_all_stored_nft(None, None)
-        // .list_all_stored_nft(None, Some("100"))
+        .list_all_stored_nft(None, None, false)
+        // .list_all_stored_nft(None, Some("100"), false)
         // .get_nft("bafybeibo4rijplqlv6o6j7jcftx4ckgzjv43jd2whqeluc5dnxslutsdda")
         .await?;
     println!("{}", to_string_pretty(&list_nft)?);
@@ -129,6 +131,8 @@ async fn main() -> Result<()> {
 ### Upload a file
 
 You can upload a file, it will not generate a `metadata.json` file
+
+check also the `upload_file_in_directory` method if you wan to store one or more files in an IPFS Directory also preserving the original filenames
 
 ```rust
 use nft_storage::NftStorage;

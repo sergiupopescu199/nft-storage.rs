@@ -89,6 +89,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "create_nft_dir"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nft-storage",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "delete_nft"
 version = "0.1.0"
 dependencies = [
@@ -993,6 +1004,17 @@ dependencies = [
  "anyhow",
  "nft-storage",
  "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "upload_file_dir"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nft-storage",
  "serde",
  "serde_json",
  "tokio",
