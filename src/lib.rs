@@ -1,6 +1,7 @@
 mod error;
-mod types;
-pub use crate::{error::NFTStorageError, types::*};
+pub mod types;
+pub use crate::error::NFTStorageError;
+use crate::types::*;
 use anyhow::Result;
 use reqwest::{
     multipart::{Form, Part},

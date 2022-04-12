@@ -1,5 +1,5 @@
 use anyhow::Result;
-use nft_storage::{CheckCidNftResponse, NftStorage};
+use nft_storage::{types::CheckCidNftResponse, NftStorage};
 use serde_json::to_string_pretty;
 
 #[tokio::main]
