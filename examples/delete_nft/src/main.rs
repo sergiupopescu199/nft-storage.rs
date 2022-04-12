@@ -1,6 +1,6 @@
 use anyhow::Result;
-use nft_storage::NftStorage;
-use serde_json::{to_string_pretty, Value};
+use nft_storage::{DeleteNftResponse, NftStorage};
+use serde_json::to_string_pretty;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         "token generated from nft storage",
     );
     // store an nft
-    let deleted_nft: Value = nft_storage
+    let deleted_nft: DeleteNftResponse = nft_storage
         // .delete_nft("bafybeibo4rijplqlv6o6j7jcftx4ckgzjv43jd2whqeluc5dnxslutsdda")
         .delete_all_nft()
         .await?;

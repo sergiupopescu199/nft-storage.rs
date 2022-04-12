@@ -1,1 +1,2 @@
-hello from Rust!
+hello from Rust! 
+part 2

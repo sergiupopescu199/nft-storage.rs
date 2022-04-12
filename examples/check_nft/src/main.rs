@@ -1,6 +1,6 @@
 use anyhow::Result;
-use nft_storage::NftStorage;
-use serde_json::{to_string_pretty, Value};
+use nft_storage::{CheckCidNftResponse, NftStorage};
+use serde_json::to_string_pretty;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         "token generated from nft storage",
     );
     // check if nft is stored on nft storage
-    let is_stored_on_nft_storage: Value = nft_storage
+    let is_stored_on_nft_storage: CheckCidNftResponse = nft_storage
         .check_nft("bafybeiflbavrum45ekg5qxbecvpn5bfcvuk45txcmgsabfebtkv44cn6vq")
         .await?;
     println!("{}", to_string_pretty(&is_stored_on_nft_storage)?);

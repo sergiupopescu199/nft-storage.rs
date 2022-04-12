@@ -1,6 +1,6 @@
 use anyhow::Result;
-use nft_storage::NftStorage;
-use serde_json::{to_string_pretty, Value};
+use nft_storage::{NftStorage, StoreNftResponse};
+use serde_json::to_string_pretty;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let file_bytes_vec = vec![file, file2];
 
     // upload file in a directory
-    let store_file: Value = nft_storage
+    let store_file: StoreNftResponse = nft_storage
         .upload_file_in_directory(file_bytes_vec, file_names)
         .await?;
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use nft_storage::NftStorage;
-use serde_json::{to_string_pretty, Value};
+use nft_storage::{NftStorage, StoreNftResponse};
+use serde_json::to_string_pretty;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
     // read file
     let file = std::fs::read("hello.txt")?;
     // upload a file
-    let store_file: Value = nft_storage.upload_file(file).await?;
+    let store_file: StoreNftResponse = nft_storage.upload_file(file).await?;
     println!("{}", to_string_pretty(&store_file)?);
 
     Ok(())
