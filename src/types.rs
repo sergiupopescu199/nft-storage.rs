@@ -7,7 +7,7 @@ pub struct ListNftResponse {
     /// status of the request
     pub ok: bool,
     /// all nft data
-    pub value: Vec<Value>,
+    pub value: Vec<NftValue>,
 }
 
 /// response after an nft was stored
@@ -16,7 +16,7 @@ pub struct StoreNftResponse {
     /// status of the request
     pub ok: bool,
     /// stored nft data
-    pub value: Value,
+    pub value: NftValue,
 }
 
 /// query nft from nft storage api
@@ -25,7 +25,7 @@ pub struct GetNftResponse {
     /// status of the request
     pub ok: bool,
     /// queried nft data
-    pub value: Value,
+    pub value: NftValue,
 }
 
 /// response of a deleted nft
@@ -47,7 +47,7 @@ pub struct CheckCidNftResponse {
 /// main obj that hold all the response data
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct Value {
+pub struct NftValue {
     /// ipfs cid (file hash)
     pub cid: String,
     /// file size
